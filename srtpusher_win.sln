@@ -4,6 +4,9 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 VisualStudioVersion = 15.0.27703.2035
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "srtpusher_win", "srtpusher_win\srtpusher_win.vcxproj", "{3703D269-1F41-4DA6-AB30-4819ECDA67D3}"
+	ProjectSection(ProjectDependencies) = postProject
+		{D4FD8942-4634-4598-B1C0-55D61815A9E8} = {D4FD8942-4634-4598-B1C0-55D61815A9E8}
+	EndProjectSection
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "libmpeg", "third_party\libmpeg\libmpeg.vcxproj", "{D4FD8942-4634-4598-B1C0-55D61815A9E8}"
 EndProject
