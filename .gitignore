@@ -70,6 +70,7 @@ StyleCopReport.xml
 *.ipdb
 *.pgc
 *.pgd
+*pdb
 *.rsp
 *.sbr
 *.tlb
