@@ -23,6 +23,11 @@ CCapturer::~CCapturer()
 	av_packet_free(&m_pVideoPkt);
 }
 
+void CCapturer::SetEncodeListener(EncodeListener* pListener)
+{
+	this->m_pEncodeListener = pListener;
+}
+
 void CCapturer::InitFFmpeg()
 {
 	avdevice_register_all();
@@ -120,7 +125,7 @@ int CCapturer::EncodeVideo(int frame_rate,int bit_rate)
 	}
 
 	/* encode 1 second of video */
-	for (int i = 0; i < 360; i++) {
+	for (int i = 0; i < 36000; i++) {
 		//AVPacket *packet = (AVPacket *)av_malloc(sizeof(AVPacket));
 		av_read_frame(m_pFormatCtx, m_pVideoPkt);
 		//ÅÐ¶ÏpacketÊÇ·ñÎªÊÓÆµÖ¡

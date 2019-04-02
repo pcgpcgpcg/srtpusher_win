@@ -158,6 +158,9 @@
   <ItemGroup>
     <ClCompile Include="CCapturer.cpp" />
     <ClCompile Include="CSender.cpp" />
+    <ClCompile Include="srtpusher_win - 副本.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+    </ClCompile>
     <ClCompile Include="srtpusher_win.cpp" />
     <ClCompile Include="stdafx.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Create</PrecompiledHeader>

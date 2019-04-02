@@ -32,10 +32,12 @@ class CCapturer
 public:
 	CCapturer();
 	~CCapturer();
-private:
+public:
+	void SetEncodeListener(EncodeListener* pListener);
 	void InitFFmpeg();
 	int OpenCameraVideo();
-	int EncodeVideo(int frame_rate, int bit_rate);
+	int EncodeVideo(int frame_rate, int bit_rate);//bit_rate(kbps)
+private:
 	void Encode(AVFrame* pFrame);
 private:
 	AVFormatContext * m_pFormatCtx;

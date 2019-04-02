@@ -41,5 +41,8 @@
     <ClCompile Include="CSender.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="srtpusher_win - 副本.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
 </Project>
