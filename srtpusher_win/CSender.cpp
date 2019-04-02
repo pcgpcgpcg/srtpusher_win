@@ -17,6 +17,9 @@ static void ts_free(void* /*param*/, void* /*packet*/)
 
 static void ts_write(void* param, const void* packet, size_t bytes)
 {
+	cout << endl;
+	cout << "ts_write thread id=" << std::this_thread::get_id()<<endl;
+
 	static int recvlen = 0;
 	int paramvalue = *(int*)param;
 	memcpy(g_sendbuffer + recvlen, packet, 188);
@@ -78,6 +81,7 @@ CSender::~CSender()
 
 int CSender::InitSender(const char* addr,int port)
 {
+	cout << "main thread id=" << std::this_thread::get_id();
 	//init srt
 	srt_startup();
 	srt_setloglevel(srt_logging::LogLevel::debug);
@@ -110,6 +114,20 @@ int CSender::ConnectToServer()
 		fprintf(stderr, "srt_connect: %s\n", srt_getlasterror_str());
 		return -1;
 	}
+	//add DJ header
+	/*char initbuffer[13];
+	uint64_t displayID = 11111;
+	memset(initbuffer, 0, 13);
+	initbuffer[0] = 1;
+	initbuffer[5] = displayID >> 56 & 0xFF;
+	initbuffer[6] = displayID >> 48 & 0xFF;
+	initbuffer[7] = displayID >> 40 & 0xFF;
+	initbuffer[8] = displayID >> 32 & 0xFF;
+	initbuffer[9] = displayID >> 24 & 0xFF;
+	initbuffer[10] = displayID >> 16 & 0xFF;
+	initbuffer[11] = displayID >> 8 & 0xFF;
+	initbuffer[12] = displayID & 0xFF;
+	srt_sendmsg2(m_srtsock, initbuffer, sizeof initbuffer, NULL);*/
 	return 1;
 }
 
@@ -117,10 +135,35 @@ int CSender::StartPush()
 {
 	m_capture.SetEncodeListener(this);
 	m_capture.InitFFmpeg();
-	m_capture.OpenCameraVideo();
-	m_capture.EncodeVideo(15, 400000);
+	m_capture.OpenCameraVideo(30,800000);
+	m_capture.StartCapture();
+	//启动发送队列
+	m_bStop = false;
+	m_pSendThread = make_shared<thread>(CSender::SendThread, this);
 
 	return 1;
+}
+
+void CSender::SendThread(void* data)
+{
+	CSender* pSender = (CSender*)data;
+	
+	
+	while (!pSender->m_bStop)
+	{
+		if (!pSender->m_capture.m_vbuffer_queue.empty())
+		{
+			//假设从队列里拿到了数据
+			VIDEOBUFFER* pBuffer = &(pSender->m_capture.m_vbuffer_queue.front);
+			//调用srt发送
+			mpeg_ts_write(pSender->m_pTsHandler, ts_stream(pSender->m_pTsHandler, PSI_STREAM_H264), pBuffer->flags, pBuffer->pts, pBuffer->dts, pBuffer->data, pBuffer->len);
+			//TODO 释放可能会有问题
+			delete pBuffer->data;
+			pSender->m_capture.m_vbuffer_queue.pop();
+		}
+		
+	}
+
 }
 
 void CSender::OnVideoEncodedBuffer(int flags, int64_t pts, int64_t dts, void* buffer, int buffer_size)

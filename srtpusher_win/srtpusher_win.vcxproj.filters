@@ -21,10 +21,13 @@
     <ClInclude Include="targetver.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="CCapturer.h">
+    <ClInclude Include="CSender.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="CSender.h">
+    <ClInclude Include="CCapturer-副本2.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="CCapturer.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
@@ -32,16 +35,19 @@
     <ClCompile Include="stdafx.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="CSender.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="CCapturer-副本2.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="srtpusher_win-副本.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="srtpusher_win.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="CCapturer.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="CSender.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="srtpusher_win - 副本.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

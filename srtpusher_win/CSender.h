@@ -24,6 +24,8 @@ public:
 	int InitSender(const char* addr, int port);
 	int ConnectToServer();
 	int StartPush();
+public:
+	static void SendThread(void* data);
 private:
 	mpeg_ts_func_t m_ts_func;
 	struct sockaddr_in m_sockaddr_in;
@@ -31,5 +33,7 @@ private:
 	SRTSOCKET m_srtsock;
 	int m_connID;
 	CCapturer m_capture;
+	bool m_bStop;
+	shared_ptr<thread> m_pSendThread;//∑¢ÀÕ∂”¡–
 };
 

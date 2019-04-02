@@ -18,19 +18,8 @@ extern "C" {
 #include "mpeg-ts-proto.h"
 }
 
-#include <queue>
 #include <thread>
-#include <mutex>
 #include <map>
-
-struct VIDEOBUFFER {
-	int flags;
-	int64_t pts;
-	int64_t dts;
-	int len;
-	uint8_t* data;
-	
-};
 
 class EncodeListener 
 {
@@ -47,26 +36,25 @@ public:
 public:
 	void SetEncodeListener(EncodeListener* pListener);
 	void InitFFmpeg();
-	int OpenCameraVideo(int frame_rate, int bit_rate);//bit_rate(kbps)
-	void StartCapture();
-	static int EncodeVideoThread(void* data);//线程函数,估计后面要做成类的静态函数
-	static void Encode(AVPacket* pPacket, AVFrame *pFrame, void *data);
-
-public:
+	int OpenCameraVideo();
+	int EncodeVideo(int frame_rate, int bit_rate);//bit_rate(kbps)
+private:
+	void Encode(AVFrame* pFrame);
+private:
 	AVFormatContext	*m_pFormatCtx_Video;
 	AVFormatContext *m_pFormatCtx_Audio;
 	AVCodecContext* m_pH264CodecContext;
 	AVCodec* m_pH264Codec;
 	AVPacket *m_pVideoPkt;
 	AVFrame *m_pVideoFrame;
+	AVFifoBuffer *fifo_video = NULL;
+	AVAudioFifo *fifo_audio = NULL;
 	int m_videoIndex;
 	int m_audioIndex;
-	bool m_bStop;
 private:
 	shared_ptr<thread> m_pVideoThread;
 	shared_ptr<thread> m_pAudioThread;
-public:
+private:
 	EncodeListener *m_pEncodeListener;
-	std::queue<VIDEOBUFFER> m_vbuffer_queue;
 };
 

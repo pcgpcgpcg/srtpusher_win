@@ -1,7 +1,6 @@
 #include "stdafx.h"
 #include "CCapturer.h"
 
-std::mutex g_locker;
 
 CCapturer::CCapturer()
 {
@@ -11,7 +10,6 @@ CCapturer::CCapturer()
 	m_pH264Codec = NULL;
 	m_videoIndex = -1;
 	m_audioIndex = -1;
-	m_bStop = true;
 	m_pFormatCtx_Video = avformat_alloc_context();
 }
 
@@ -40,7 +38,7 @@ void CCapturer::InitFFmpeg()
 	//deprecated no need to call av_register_all
 }
 
-int CCapturer::OpenCameraVideo(int frame_rate, int bit_rate)
+int CCapturer::OpenCameraVideo()
 {
 	string videoFileInput = "video=Integrated Camera";//"video=Integrated Webcam";
 	string audioFileInput = "audio=麦克风阵列(Realtek High Definition Audio)";
@@ -75,6 +73,10 @@ int CCapturer::OpenCameraVideo(int frame_rate, int bit_rate)
 		//Couldn't find a video stream
 		return -2;
 	}
+}
+
+int CCapturer::EncodeVideo(int frame_rate,int bit_rate)
+{
 	//bacause AV_CODEC_ID_H264 means libx264,while libx264 only support yuv420p pix format and libx264rgb can support bgr24 pix format
 	m_pH264Codec = avcodec_find_encoder_by_name("libx264rgb");//avcodec_find_encoder(AVCodecID::AV_CODEC_ID_H264);
 	if (!m_pH264Codec) {
@@ -101,107 +103,84 @@ int CCapturer::OpenCameraVideo(int frame_rate, int bit_rate)
 	m_pH264CodecContext->has_b_frames = 0;
 	m_pH264CodecContext->max_b_frames = 0;
 	m_pH264CodecContext->pix_fmt = AV_PIX_FMT_BGR24;//(AVPixelFormat)pFrame->format;//AV_PIX_FMT_YUV420P;
-													//for livestreaming reduce B frame and make realtime encoding
+												  //for livestreaming reduce B frame and make realtime encoding
 	av_opt_set(m_pH264CodecContext->priv_data, "preset", "superfast", 0);
 	av_opt_set(m_pH264CodecContext->priv_data, "tune", "zerolatency", 0);
 
 	/* open it */
-	ret = avcodec_open2(m_pH264CodecContext, m_pH264Codec, NULL);
+	int ret = avcodec_open2(m_pH264CodecContext, m_pH264Codec, NULL);
 	if (ret < 0) {
 		//fprintf(stderr, "Could not open codec: %s\n", av_err2str(ret));
 		exit(1);
 	}
-}
-
-void CCapturer::StartCapture() 
-{
-	//启动视频读取和编码线程
-	m_bStop = false;
-	m_pVideoThread = make_shared<thread>(CCapturer::EncodeVideoThread, this);
-}
-
-int CCapturer::EncodeVideoThread(void* data)
-{
-	CCapturer* pCapturer = (CCapturer*)data;
-	EncodeListener* pListener = pCapturer->m_pEncodeListener;
 	//encode
-	AVFormatContext* pFormatCtx = pCapturer->m_pFormatCtx_Video;
-	AVCodecContext* pCodecCtx = pCapturer->m_pH264CodecContext;
-	int videoIndex = pCapturer->m_videoIndex;
-	int frame_rate = pCapturer->m_pH264CodecContext->framerate.num;
-	AVPacket *pVideoPkt = av_packet_alloc();
-	AVFrame *pVideoFrame = av_frame_alloc();
+	m_pVideoPkt = av_packet_alloc();
+	if (!m_pVideoPkt)
+		exit(1);
+	m_pVideoFrame = av_frame_alloc();
 
-	pVideoFrame->format = pFormatCtx->streams[videoIndex]->codecpar->format;
-	pVideoFrame->width = pFormatCtx->streams[videoIndex]->codecpar->width;
-	pVideoFrame->height = pFormatCtx->streams[videoIndex]->codecpar->height;
+	m_pVideoFrame->format = m_pFormatCtx_Video->streams[m_videoIndex]->codecpar->format;
+	m_pVideoFrame->width = m_pFormatCtx_Video->streams[m_videoIndex]->codecpar->width;
+	m_pVideoFrame->height = m_pFormatCtx_Video->streams[m_videoIndex]->codecpar->height;
 
-	int ret = av_frame_get_buffer(pVideoFrame, 32);
+	ret = av_frame_get_buffer(m_pVideoFrame, 32);
 	if (ret < 0) {
 		fprintf(stderr, "Could not allocate the video frame data\n");
 		exit(1);
 	}
 
 	/* encode 1 second of video */
-	int frame_index = 0;
-	while(!pCapturer->m_bStop) {
-		av_read_frame(pFormatCtx, pVideoPkt);
+	for (int i = 0; i < 36000; i++) {
+		//AVPacket *packet = (AVPacket *)av_malloc(sizeof(AVPacket));
+		av_read_frame(m_pFormatCtx_Video, m_pVideoPkt);
 		//判断packet是否为视频帧
-		if (pVideoPkt->stream_index == videoIndex) {
-			int size = pVideoPkt->size;//equal to 640*480*3 means in bytes
-			ret = av_frame_make_writable(pVideoFrame);
+		if (m_pVideoPkt->stream_index == m_videoIndex) {
+			//先确定这个packet的codec是啥玩意，然后看看是否需要解码,试了解码不行avopencodec2的时候不行
+			//看来不用解码，直接就可以上马
+			int size = m_pVideoPkt->size;//equal to 640*480*3 means in bytes
+			ret = av_frame_make_writable(m_pVideoFrame);
 			if (ret < 0)
 				exit(1);
-			pVideoFrame->data[0] = pVideoPkt->data + 3 * (pVideoFrame->height - 1) * ((pVideoFrame->width + 3)&~3);
-			pVideoFrame->linesize[0] = 3 * ((pVideoFrame->width + 3)&~3) * (-1);
+		
+
+			m_pVideoFrame->data[0] = m_pVideoPkt->data + 3 * (m_pVideoFrame->height - 1) * ((m_pVideoFrame->width + 3)&~3);
+			m_pVideoFrame->linesize[0] = 3 * ((m_pVideoFrame->width + 3)&~3) * (-1);
 			//调用H264进行编码
 			AVRational timeb;
-			pVideoFrame->pts = frame_index * 90000 / frame_rate;//AV_TIME_BASE* av_q2d(pH264CodecContext->time_base);
+			m_pVideoFrame->pts = i * 90000 / frame_rate;//AV_TIME_BASE* av_q2d(pH264CodecContext->time_base);
 		    /* encode the image */
-			CCapturer::Encode(pVideoPkt,pVideoFrame, data);
+			Encode(m_pVideoFrame);
+
 			//放到发送队列，组包TS 通过SRT发送
-			av_packet_unref(pVideoPkt);
-			//帧序号递增
-			frame_index++;
+			av_packet_unref(m_pVideoPkt);
 		}
 	}
 
 	/* flush the encoder */
-	CCapturer::Encode(pVideoPkt, NULL, data);
+	Encode(NULL);
 }
 
-void CCapturer::Encode(AVPacket* pPacket,AVFrame *pFrame, void *data)
+void CCapturer::Encode(AVFrame *pFrame)
 {
-	CCapturer* pCapturer = (CCapturer*)data;
-	AVCodecContext* pCodecCtx = pCapturer->m_pH264CodecContext;
-
+	int ret;
 	/* send the frame to the encoder */
-	int ret = avcodec_send_frame(pCodecCtx, pFrame);
+	ret = avcodec_send_frame(m_pH264CodecContext, pFrame);
 	if (ret < 0) {
 		fprintf(stderr, "Error sending a frame for encoding\n");
 		exit(1);
 	}
 
 	while (ret >= 0) {
-		ret = avcodec_receive_packet(pCodecCtx, pPacket);
+		ret = avcodec_receive_packet(m_pH264CodecContext, m_pVideoPkt);
 		if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF)
 			return;
 		else if (ret < 0) {
 			fprintf(stderr, "Error during encoding\n");
 			exit(1);
 		}
-		//just lock
-		std::lock_guard<std::mutex> locker(g_locker);
-		VIDEOBUFFER buffer;
-		buffer.flags = pPacket->flags & AV_PKT_FLAG_KEY;
-		buffer.pts = pPacket->pts;
-		buffer.dts = pPacket->dts;
-		buffer.len = pPacket->size;
-		buffer.data = new uint8_t[buffer.len];
-		pCapturer->m_vbuffer_queue.push(buffer);
-		//pListener->OnVideoEncodedBuffer(pPacket->flags & AV_PKT_FLAG_KEY, pPacket->pts, pPacket->dts, (void*)pPacket->data, pPacket->size);
-		//just unlock
-		av_packet_unref(pPacket);
+		//write to ts stream
+		m_pEncodeListener->OnVideoEncodedBuffer(m_pVideoPkt->flags & AV_PKT_FLAG_KEY, m_pVideoPkt->pts, m_pVideoPkt->dts, (void*)m_pVideoPkt->data, m_pVideoPkt->size);
+		av_packet_unref(m_pVideoPkt);
 	}
 }
 
