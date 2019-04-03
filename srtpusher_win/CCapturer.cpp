@@ -1,7 +1,77 @@
 #include "stdafx.h"
 #include "CCapturer.h"
+#include "windows.h"
+#include "wchar.h"
+#include <codecvt>
 
-std::mutex g_locker;
+std::string UnicodeToUTF8(const std::wstring & wstr)
+{
+	std::string ret;
+	try {
+		std::wstring_convert< std::codecvt_utf8<wchar_t> > wcv;
+		ret = wcv.to_bytes(wstr);
+	}
+	catch (const std::exception & e) {
+		//std::cerr << e.what() << std::endl;
+	}
+	return ret;
+}
+
+std::wstring UTF8ToUnicode(const std::string & str)
+{
+	std::wstring ret;
+	try {
+		std::wstring_convert< std::codecvt_utf8<wchar_t> > wcv;
+		ret = wcv.from_bytes(str);
+	}
+	catch (const std::exception & e) {
+		//std::cerr << e.what() << std::endl;
+	}
+	return ret;
+}
+
+std::string UnicodeToANSI(const std::wstring & wstr)
+{
+	std::string ret;
+	std::mbstate_t state = {};
+	const wchar_t *src = wstr.data();
+	size_t len = std::wcsrtombs(nullptr, &src, 0, &state);
+	if (static_cast<size_t>(-1) != len) {
+		std::unique_ptr< char[] > buff(new char[len + 1]);
+		len = std::wcsrtombs(buff.get(), &src, len, &state);
+		if (static_cast<size_t>(-1) != len) {
+			ret.assign(buff.get(), len);
+		}
+	}
+	return ret;
+}
+
+std::wstring ANSIToUnicode(const std::string & str)
+{
+	std::wstring ret;
+	std::mbstate_t state = {};
+	const char *src = str.data();
+	size_t len = std::mbsrtowcs(nullptr, &src, 0, &state);
+	if (static_cast<size_t>(-1) != len) {
+		std::unique_ptr< wchar_t[] > buff(new wchar_t[len + 1]);
+		len = std::mbsrtowcs(buff.get(), &src, len, &state);
+		if (static_cast<size_t>(-1) != len) {
+			ret.assign(buff.get(), len);
+		}
+	}
+	return ret;
+}
+
+std::string UTF8ToANSI(const std::string & str)
+{
+	return UnicodeToANSI(UTF8ToUnicode(str));
+}
+
+std::string ANSIToUTF8(const std::string & str)
+{
+	return UnicodeToUTF8(ANSIToUnicode(str));
+}
+
 
 CCapturer::CCapturer()
 {
@@ -13,6 +83,7 @@ CCapturer::CCapturer()
 	m_audioIndex = -1;
 	m_bStop = true;
 	m_pFormatCtx_Video = avformat_alloc_context();
+	m_pFormatCtx_Audio = avformat_alloc_context();
 }
 
 
@@ -25,8 +96,6 @@ CCapturer::~CCapturer()
 		avformat_close_input(&m_pFormatCtx_Audio);
 	}
 	avcodec_free_context(&m_pH264CodecContext);
-	av_frame_free(&m_pVideoFrame);
-	av_packet_free(&m_pVideoPkt);
 }
 
 void CCapturer::SetEncodeListener(EncodeListener* pListener)
@@ -40,6 +109,55 @@ void CCapturer::InitFFmpeg()
 	//deprecated no need to call av_register_all
 }
 
+int CCapturer::OpenAudioDevice()
+{
+	string audioFileInput = UnicodeToUTF8(L"audio=麦克风阵列 (Realtek High Definition Audio)");
+	AVInputFormat *ifmt = av_find_input_format("dshow");
+	if (avformat_open_input(&m_pFormatCtx_Audio, audioFileInput.c_str(), ifmt, NULL) < 0)
+	{
+		printf("Couldn't open input stream.（无法打开音频输入流）\n");
+		return -1;
+	}
+
+	if (avformat_find_stream_info(m_pFormatCtx_Audio, NULL) < 0)
+		return -1;
+
+	av_dump_format(m_pFormatCtx_Audio, 0, audioFileInput.c_str(), 0);
+	if (m_pFormatCtx_Audio->streams[0]->codecpar->codec_type != AVMEDIA_TYPE_AUDIO)
+	{
+		printf("Couldn't find video stream information.（无法获取音频流信息）\n");
+		return -1;
+	}
+	m_audioIndex = 0;
+	//init encoder
+	m_pAudioCodec = avcodec_find_encoder(AV_CODEC_ID_AAC);
+	m_pAudioCodecContext = avcodec_alloc_context3(m_pAudioCodec);
+	if (!m_pAudioCodecContext) {
+		fprintf(stderr, "Could not allocate audio codec context\n");
+		return -1;
+	}
+
+	/* put sample parameters */
+	m_pAudioCodecContext->codec_type = AVMEDIA_TYPE_AUDIO;//编码类型为音频
+	m_pAudioCodecContext->bit_rate = 64000;
+	/* check that the encoder supports s16 pcm input */
+	//m_pAudioCodecContext->sample_fmt = AV_SAMPLE_FMT_S16;
+	/* select other audio parameters supported by the encoder */
+	m_pAudioCodecContext->sample_rate = 44100;	
+	m_pAudioCodecContext->sample_fmt = AV_SAMPLE_FMT_FLTP;
+	//音频通道布局 先存放左声道，然后右声道
+	m_pAudioCodecContext->channel_layout = AV_CH_LAYOUT_STEREO;
+	//通道数
+	m_pAudioCodecContext->channels = 2;
+	m_pAudioCodecContext->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
+
+	/* open it */
+	if (avcodec_open2(m_pAudioCodecContext, m_pAudioCodec, NULL) < 0) {
+		fprintf(stderr, "Could not open codec\n");
+		exit(1);
+	}
+}
+
 int CCapturer::OpenCameraVideo(int frame_rate, int bit_rate)
 {
 	string videoFileInput = "video=Integrated Camera";//"video=Integrated Webcam";
@@ -47,7 +165,7 @@ int CCapturer::OpenCameraVideo(int frame_rate, int bit_rate)
 	AVInputFormat *ifmt = av_find_input_format("dshow");
 	AVDictionary *format_opts = nullptr;
 	//av_dict_set_int(&format_opts, "rtbufsize", 18432000, 0);
-	av_dict_set(&format_opts, "video_size", "640x480", 0);
+	av_dict_set(&format_opts, "video_size", "848x480", 0);
 	av_dict_set(&format_opts, "pixel_format", "bgr24", 0);
 
 	int ret = avformat_open_input(&m_pFormatCtx_Video, videoFileInput.c_str(), ifmt, &format_opts);
@@ -115,9 +233,18 @@ int CCapturer::OpenCameraVideo(int frame_rate, int bit_rate)
 
 void CCapturer::StartCapture() 
 {
-	//启动视频读取和编码线程
+	//启动音视频读取和编码线程
 	m_bStop = false;
 	m_pVideoThread = make_shared<thread>(CCapturer::EncodeVideoThread, this);
+	m_pAudioThread = make_shared<thread>(CCapturer::EncodeAudioThread, this);
+}
+
+void CCapturer::StopCapture()
+{
+	//启动视频读取和编码线程
+	m_bStop = true;
+	m_pVideoThread->join();
+	m_pAudioThread->join();
 }
 
 int CCapturer::EncodeVideoThread(void* data)
@@ -143,7 +270,7 @@ int CCapturer::EncodeVideoThread(void* data)
 	}
 
 	/* encode 1 second of video */
-	int frame_index = 0;
+	int64_t frame_index = 0;
 	while(!pCapturer->m_bStop) {
 		av_read_frame(pFormatCtx, pVideoPkt);
 		//判断packet是否为视频帧
@@ -155,10 +282,9 @@ int CCapturer::EncodeVideoThread(void* data)
 			pVideoFrame->data[0] = pVideoPkt->data + 3 * (pVideoFrame->height - 1) * ((pVideoFrame->width + 3)&~3);
 			pVideoFrame->linesize[0] = 3 * ((pVideoFrame->width + 3)&~3) * (-1);
 			//调用H264进行编码
-			AVRational timeb;
 			pVideoFrame->pts = frame_index * 90000 / frame_rate;//AV_TIME_BASE* av_q2d(pH264CodecContext->time_base);
 		    /* encode the image */
-			CCapturer::Encode(pVideoPkt,pVideoFrame, data);
+			CCapturer::EncodeVideo(pVideoPkt,pVideoFrame, data);
 			//放到发送队列，组包TS 通过SRT发送
 			av_packet_unref(pVideoPkt);
 			//帧序号递增
@@ -167,13 +293,16 @@ int CCapturer::EncodeVideoThread(void* data)
 	}
 
 	/* flush the encoder */
-	CCapturer::Encode(pVideoPkt, NULL, data);
+	CCapturer::EncodeVideo(pVideoPkt, NULL, data);
+
+	av_frame_free(&pVideoFrame);
+	av_packet_free(&pVideoPkt);
 }
 
-void CCapturer::Encode(AVPacket* pPacket,AVFrame *pFrame, void *data)
+void CCapturer::EncodeVideo(AVPacket* pPacket,AVFrame *pFrame, void *data)
 {
 	CCapturer* pCapturer = (CCapturer*)data;
-	AVCodecContext* pCodecCtx = pCapturer->m_pH264CodecContext;
+	AVCodecContext* pCodecCtx = pCapturer->m_pAudioCodecContext;
 
 	/* send the frame to the encoder */
 	int ret = avcodec_send_frame(pCodecCtx, pFrame);
@@ -190,18 +319,118 @@ void CCapturer::Encode(AVPacket* pPacket,AVFrame *pFrame, void *data)
 			fprintf(stderr, "Error during encoding\n");
 			exit(1);
 		}
-		//just lock
-		std::lock_guard<std::mutex> locker(g_locker);
-		VIDEOBUFFER buffer;
+
+		AVBUFFER buffer;
+		buffer.bVideo = 1;
 		buffer.flags = pPacket->flags & AV_PKT_FLAG_KEY;
 		buffer.pts = pPacket->pts;
 		buffer.dts = pPacket->dts;
 		buffer.len = pPacket->size;
-		buffer.data = new uint8_t[buffer.len];
-		pCapturer->m_vbuffer_queue.push(buffer);
+		buffer.data = new uint8_t[pPacket->size];
+		memcpy(buffer.data, pPacket->data, pPacket->size);
+		//just lock
+		std::lock_guard<std::mutex> locker(pCapturer->m_mutex);
+		pCapturer->m_avbuffer_queue.push(buffer);
+		pCapturer->m_notEmpty.notify_one();
 		//pListener->OnVideoEncodedBuffer(pPacket->flags & AV_PKT_FLAG_KEY, pPacket->pts, pPacket->dts, (void*)pPacket->data, pPacket->size);
 		//just unlock
 		av_packet_unref(pPacket);
 	}
+}
+
+int CCapturer::EncodeAudioThread(void* data)
+{
+	CCapturer* pCapturer = (CCapturer*)data;
+	EncodeListener* pListener = pCapturer->m_pEncodeListener;
+	//encode
+	AVFormatContext* pFormatCtx = pCapturer->m_pFormatCtx_Audio;
+	AVCodecContext* pCodecCtx = pCapturer->m_pAudioCodecContext;
+	int videoIndex = pCapturer->m_audioIndex;
+	//int frame_rate = pCapturer->m_pAudioCodecContext->framerate.num;
+	AVPacket *pAudioPkt = av_packet_alloc();
+	AVFrame *pAudioFrame = av_frame_alloc();
+
+	pAudioPkt = av_packet_alloc();
+	/* frame containing input raw audio */
+	pAudioFrame = av_frame_alloc();
+
+	pAudioFrame->nb_samples = pCodecCtx->frame_size;
+	pAudioFrame->format = pCodecCtx->sample_fmt;
+	pAudioFrame->channel_layout = pCodecCtx->channel_layout;
+
+	/* allocate the data buffers */
+
+	int ret = av_frame_get_buffer(pAudioFrame, 0);
+	if (ret < 0) {
+		fprintf(stderr, "Could not allocate audio data buffers\n");
+		exit(1);
+	}
+
+	//计算编码器编码能力一帧的数据大小
+	/*int size = av_samples_get_buffer_size(NULL, pCodecCtx->channels, pCodecCtx->frame_size, pCodecCtx->sample_fmt, 1);
+	uint8_t *frame_buf = (uint8_t *)av_malloc(size);
+	avcodec_fill_audio_frame(pAudioFrame, pCodecCtx->channels, pCodecCtx->sample_fmt, (const uint8_t*)frame_buf, size, 1);*/
+
+	int64_t frame_index = 0;
+	while (!pCapturer->m_bStop) {
+		av_read_frame(pFormatCtx, pAudioPkt);
+		/* make sure the frame is writable -- makes a copy if the encoder
+		* kept a reference internally */
+		ret = av_frame_make_writable(pAudioFrame);
+		if (ret < 0)
+			exit(1);
+
+		pAudioFrame->data[0] = pAudioPkt->data;
+		pAudioFrame->pts= frame_index * (pCodecCtx->frame_size * 1000 / pCodecCtx->sample_rate);
+		CCapturer::EncodeAudio(pAudioPkt, pAudioFrame, data);
+
+		frame_index++;
+	}
+
+	/* flush the encoder */
+	CCapturer::EncodeAudio(pAudioPkt, NULL, data);
+
+	av_frame_free(&pAudioFrame);
+	av_packet_free(&pAudioPkt);
+}
+void CCapturer::EncodeAudio(AVPacket* pPacket, AVFrame *pFrame, void *data)
+{
+	CCapturer* pCapturer = (CCapturer*)data;
+	AVCodecContext* pCodecCtx = pCapturer->m_pAudioCodecContext;
+
+	int ret;
+
+	/* send the frame for encoding */
+	ret = avcodec_send_frame(pCodecCtx, pFrame);
+	if (ret < 0) {
+		fprintf(stderr, "Error sending the frame to the encoder\n");
+		exit(1);
+	}
+
+	/* read all the available output packets (in general there may be any
+	* number of them */
+	while (ret >= 0) {
+		ret = avcodec_receive_packet(pCodecCtx, pPacket);
+		if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF)
+			return;
+		else if (ret < 0) {
+			fprintf(stderr, "Error encoding audio frame\n");
+			exit(1);
+		}
+		AVBUFFER buffer;
+		buffer.bVideo = 0;
+		buffer.flags = pPacket->flags & AV_PKT_FLAG_KEY;
+		buffer.pts = pPacket->pts;
+		buffer.dts = pPacket->dts;
+		buffer.len = pPacket->size;
+		buffer.data = new uint8_t[pPacket->size];
+		memcpy(buffer.data, pPacket->data, pPacket->size);
+		//just lock
+		std::lock_guard<std::mutex> locker(pCapturer->m_mutex);
+		pCapturer->m_avbuffer_queue.push(buffer);
+		pCapturer->m_notEmpty.notify_one();
+		av_packet_unref(pPacket);
+	}
+
 }
 

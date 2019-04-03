@@ -59,6 +59,7 @@ CSender::CSender()
 	m_ts_func.alloc = ts_alloc;
 	m_ts_func.write = ts_write;
 	m_ts_func.free = ts_free;
+	m_bStop = false;
 }
 
 
@@ -131,11 +132,12 @@ int CSender::ConnectToServer()
 	return 1;
 }
 
-int CSender::StartPush()
+int CSender::StartPush(int fps,int bit_rate)
 {
 	m_capture.SetEncodeListener(this);
 	m_capture.InitFFmpeg();
-	m_capture.OpenCameraVideo(30,800000);
+	m_capture.OpenAudioDevice();
+	m_capture.OpenCameraVideo(fps, bit_rate);	
 	m_capture.StartCapture();
 	//启动发送队列
 	m_bStop = false;
@@ -144,23 +146,41 @@ int CSender::StartPush()
 	return 1;
 }
 
+void CSender::StopPush()
+{
+	m_bStop = true;
+	m_pSendThread->join();
+	m_capture.StopCapture();
+}
+
 void CSender::SendThread(void* data)
 {
 	CSender* pSender = (CSender*)data;
+	CCapturer* pCapturer = &(pSender->m_capture);
 	
 	
 	while (!pSender->m_bStop)
 	{
-		if (!pSender->m_capture.m_vbuffer_queue.empty())
+		std::lock_guard<std::mutex> locker(pSender->m_capture.m_mutex);
+		while (pCapturer->m_avbuffer_queue.empty()&& !pSender->m_bStop)
 		{
-			//假设从队列里拿到了数据
-			VIDEOBUFFER* pBuffer = &(pSender->m_capture.m_vbuffer_queue.front);
-			//调用srt发送
-			mpeg_ts_write(pSender->m_pTsHandler, ts_stream(pSender->m_pTsHandler, PSI_STREAM_H264), pBuffer->flags, pBuffer->pts, pBuffer->dts, pBuffer->data, pBuffer->len);
-			//TODO 释放可能会有问题
-			delete pBuffer->data;
-			pSender->m_capture.m_vbuffer_queue.pop();
+			pCapturer->m_notEmpty.wait(pCapturer->m_mutex);
 		}
+		//假设从队列里拿到了数据
+		AVBUFFER* pBuffer = &(pCapturer->m_avbuffer_queue.front());
+		//调用srt发送
+		if (pBuffer->bVideo)
+		{
+			mpeg_ts_write(pSender->m_pTsHandler, ts_stream(pSender->m_pTsHandler, PSI_STREAM_H264), pBuffer->flags, pBuffer->pts, pBuffer->dts, pBuffer->data, pBuffer->len);
+		}	
+		else
+		{
+			mpeg_ts_write(pSender->m_pTsHandler, ts_stream(pSender->m_pTsHandler, PSI_STREAM_AAC), pBuffer->flags, pBuffer->pts, pBuffer->dts, pBuffer->data, pBuffer->len);
+		}
+
+		//TODO 释放可能会有问题
+		delete pBuffer->data;
+		pSender->m_capture.m_avbuffer_queue.pop();
 		
 	}
 

@@ -23,7 +23,8 @@ public:
 	virtual void OnAudioEncodedBuffer(int flags, int64_t pts, int64_t dts, void* buffer, int buffer_size);
 	int InitSender(const char* addr, int port);
 	int ConnectToServer();
-	int StartPush();
+	int StartPush(int fps, int bit_rate);
+	void StopPush();
 public:
 	static void SendThread(void* data);
 private:

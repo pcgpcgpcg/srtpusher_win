@@ -22,8 +22,10 @@ extern "C" {
 #include <thread>
 #include <mutex>
 #include <map>
+#include <condition_variable>
 
-struct VIDEOBUFFER {
+struct AVBUFFER {
+	int bVideo;
 	int flags;
 	int64_t pts;
 	int64_t dts;
@@ -48,15 +50,21 @@ public:
 	void SetEncodeListener(EncodeListener* pListener);
 	void InitFFmpeg();
 	int OpenCameraVideo(int frame_rate, int bit_rate);//bit_rate(kbps)
+	int OpenAudioDevice();
 	void StartCapture();
-	static int EncodeVideoThread(void* data);//线程函数,估计后面要做成类的静态函数
-	static void Encode(AVPacket* pPacket, AVFrame *pFrame, void *data);
+	void StopCapture();
+	static int EncodeVideoThread(void* data);
+	static int EncodeAudioThread(void* data);
+	static void EncodeVideo(AVPacket* pPacket, AVFrame *pFrame, void *data);
+	static void EncodeAudio(AVPacket* pPacket, AVFrame *pFrame, void *data);
 
 public:
 	AVFormatContext	*m_pFormatCtx_Video;
 	AVFormatContext *m_pFormatCtx_Audio;
 	AVCodecContext* m_pH264CodecContext;
+	AVCodecContext* m_pAudioCodecContext;
 	AVCodec* m_pH264Codec;
+	AVCodec* m_pAudioCodec;
 	AVPacket *m_pVideoPkt;
 	AVFrame *m_pVideoFrame;
 	int m_videoIndex;
@@ -67,6 +75,8 @@ private:
 	shared_ptr<thread> m_pAudioThread;
 public:
 	EncodeListener *m_pEncodeListener;
-	std::queue<VIDEOBUFFER> m_vbuffer_queue;
+	std::queue<AVBUFFER> m_avbuffer_queue;
+	std::condition_variable_any m_notEmpty;//队列有数据
+	std::mutex m_mutex;
 };
 
