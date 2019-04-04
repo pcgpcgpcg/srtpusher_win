@@ -236,7 +236,7 @@ void CCapturer::StartCapture()
 	//启动音视频读取和编码线程
 	m_bStop = false;
 	m_pVideoThread = make_shared<thread>(CCapturer::EncodeVideoThread, this);
-	m_pAudioThread = make_shared<thread>(CCapturer::EncodeAudioThread, this);
+	//m_pAudioThread = make_shared<thread>(CCapturer::EncodeAudioThread, this);
 }
 
 void CCapturer::StopCapture()
@@ -302,7 +302,7 @@ int CCapturer::EncodeVideoThread(void* data)
 void CCapturer::EncodeVideo(AVPacket* pPacket,AVFrame *pFrame, void *data)
 {
 	CCapturer* pCapturer = (CCapturer*)data;
-	AVCodecContext* pCodecCtx = pCapturer->m_pAudioCodecContext;
+	AVCodecContext* pCodecCtx = pCapturer->m_pH264CodecContext;
 
 	/* send the frame to the encoder */
 	int ret = avcodec_send_frame(pCodecCtx, pFrame);
