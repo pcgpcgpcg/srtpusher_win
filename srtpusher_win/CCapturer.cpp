@@ -158,6 +158,16 @@ int CCapturer::OpenAudioDevice()
 	}
 }
 
+int CCapturer::listDshowDevices()
+{
+	Prepare();
+	TCHAR* devicelist = new TCHAR[300];
+	int size = 0;
+	DS_GetDeviceSources(devicelist, size, FALSE);
+
+	return 0;
+}
+
 int CCapturer::OpenCameraVideo(int frame_rate, int bit_rate)
 {
 	string videoFileInput = "video=Integrated Camera";//"video=Integrated Webcam";

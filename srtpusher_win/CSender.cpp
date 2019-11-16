@@ -136,6 +136,7 @@ int CSender::StartPush(int fps,int bit_rate)
 {
 	m_capture.InitFFmpeg();
 	//m_capture.OpenAudioDevice();
+	m_capture.listDshowDevices();
 	m_capture.OpenCameraVideo(fps, bit_rate);	
 	m_capture.StartCapture();
 	//启动发送队列

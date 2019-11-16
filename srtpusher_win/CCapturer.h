@@ -24,6 +24,8 @@ extern "C" {
 #include <map>
 #include <condition_variable>
 
+#include "DS_AudioVideoDevices.h"
+
 struct AVBUFFER {
 	int bVideo;
 	int flags;
@@ -49,6 +51,7 @@ public:
 public:
 	void SetEncodeListener(EncodeListener* pListener);
 	void InitFFmpeg();
+	int listDshowDevices();
 	int OpenCameraVideo(int frame_rate, int bit_rate);//bit_rate(kbps)
 	int OpenAudioDevice();
 	void StartCapture();

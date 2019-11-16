@@ -30,6 +30,9 @@
     <ClInclude Include="CCapturer.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="DS_AudioVideoDevices.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="stdafx.cpp">
@@ -48,6 +51,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="CCapturer.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="DS_AudioVideoDevices.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
